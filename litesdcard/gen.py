@@ -53,7 +53,7 @@ _io = [
 # LiteSDCard Core ----------------------------------------------------------------------------------
 
 class LiteSDCardCore(SoCMini):
-    def __init__(self, platform, clk_freq=int(100e6)):
+    def __init__(self, platform, clk_freq=int(100e6), dma_data_width=32):
         # CRG --------------------------------------------------------------------------------------
         self.submodules.crg = CRG(platform.request("clk"), platform.request("rst"))
 
@@ -69,15 +69,16 @@ class LiteSDCardCore(SoCMini):
 
         # Wishbone DMA -----------------------------------------------------------------------------
         # Create Wishbone DMA Master interface and expose it.
-        wb_dma = wishbone.Interface(data_width=32)
-        platform.add_extension(wb_ctrl.get_ios("wb_dma"))
+        dma_adr_width=32-log2_int(dma_data_width//8)
+        wb_dma = wishbone.Interface(data_width=dma_data_width, adr_width=dma_adr_width)
+        platform.add_extension(wb_dma.get_ios("wb_dma"))
         self.comb += wb_dma.connect_to_pads(self.platform.request("wb_dma"), mode="master")
 
         # Create DMA Bus Handler (DMAs will be added by add_sdcard to it) and connect it to Wishbone DMA.
         self.submodules.dma_bus = SoCBusHandler(
             name             = "SoCDMABusHandler",
             standard         = "wishbone",
-            data_width       = 32,
+            data_width       = dma_data_width,
             address_width    = 32,
         )
         self.dma_bus.add_slave("dma", slave=wb_dma, region=SoCRegion(origin=0x00000000, size=0x100000000))
@@ -96,6 +97,7 @@ def main():
     parser = argparse.ArgumentParser(description="LiteSDCard standalone core generator.")
     parser.add_argument("--clk-freq", default="100e6",  help="Input Clk Frequency.")
     parser.add_argument("--vendor",   default="xilinx", help="FPGA Vendor.")
+    parser.add_argument("--dma-data-width", default="32", help="DMA data width in bits (32, 64)")
     args = parser.parse_args()
 
     # Convert/Check Arguments ----------------------------------------------------------------------------
@@ -109,7 +111,7 @@ def main():
 
     # Generate core --------------------------------------------------------------------------------
     platform = platform_cls(device="", io=_io)
-    core     = LiteSDCardCore(platform, clk_freq=clk_freq)
+    core     = LiteSDCardCore(platform, clk_freq=clk_freq, dma_data_width=int(args.dma_data_width))
     builder  = Builder(core, output_dir="build")
     builder.build(build_name="litesdcard_core", run=False)
 
